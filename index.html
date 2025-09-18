@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Terminal Calendar — All-in-one Paintable Planner</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<style>
+  :root{
+    --bg:#000;
+    --text:#66ff66;
+    --muted:#75ff75aa;
+    --accent:#00c2ff;
+    --mono: "SFMono-Regular",Consolas,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:#000;color:var(--text);font-family:var(--mono);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;padding:12px
+  }
+  header{width:100%;max-width:1400px;display:flex;align-items:center;gap:16px;margin-bottom:12px}
+  .brand{font-weight:700;color:var(--accent)}
+  .tabs{display:flex;gap:8px;margin-left:auto}
+  .tab{padding:8px 12px;border-radius:6px;background:transparent;border:1px solid rgba(102,255,102,0.06);cursor:pointer}
+  .tab.active{background:rgba(0,160,0,0.08);border-color:rgba(0,200,255,0.08)}
+
+  .app{width:100%;max-width:1400px;background:linear-gradient(180deg,#000,#021202);padding:16px;border-radius:10px;border:1px solid rgba(0,255,0,0.04)}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap}
+  .legend-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);cursor:pointer}
+  .legend-item.selected{outline:2px solid rgba(0,200,255,0.12)}
+  .legend-color{width:16px;height:16px;border-radius:3px}
+
+  /* Views */
+  .view{display:none}
+  .view.active{display:block}
+
+  /* Calendar layout */
+  .year-layout{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .month{background:rgba(2,10,2,0.4);padding:10px;border-radius:8px;border:1px solid rgba(0,255,0,0.03)}
+  .month h3{margin:0 0 6px 0;color:var(--accent)}
+  .weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px}
+  .weekday{font-size:11px;color:var(--muted);text-align:center}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cell{min-height:44px;border-radius:6px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;background:#041204;border:1px solid rgba(255,255,255,0.02);cursor:pointer}
+  .cell.empty{background:#041204}
+  .cell .date{position:absolute;left:6px;top:4px;font-size:11px;color:var(--muted)}
+
+  /* stacked stripes when multiple goals */
+  .cell.stack{background-size:200% 200%}
+
+  /* Goals page */
+  .goals-panel{display:flex;gap:16px;align-items:flex-start}
+  form{background:rgba(0,0,0,0.3);padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+  label{display:block;margin-bottom:8px}
+  input,button,select{background:transparent;border:1px solid rgba(102,255,102,0.06);color:var(--text);padding:8px;border-radius:6px;font-family:var(--mono)}
+  .goal-list{margin-top:12px}
+  .goal-item{display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.03);margin-bottom:8px}
+
+  /* analytics */
+  .chart-wrap{background:rgba(0,0,0,0.3);padding:12px;border-radius:8px}
+
+  footer{margin-top:12px;color:var(--muted);font-size:13px}
+
+  @media (max-width:1000px){.year-layout{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:700px){.year-layout{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">terminal-calendar</div>
+  <div class="muted" style="color:var(--muted)">Ano: <span id="yearLabel"></span></div>
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-view="calendar">Calendário</div>
+    <div class="tab" data-view="analytics">Analytics</div>
+    <div class="tab" data-view="goals">Goals</div>
+  </div>
+</header>
+
+<div class="app">
+  <div class="topbar">
+    <div class="legend" id="legend"></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="exportPNG">Export PNG</button>
+      <button id="clearAll">Clear All</button>
+    </div>
+  </div>
+
+  <!-- Calendar View -->
+  <div id="calendar" class="view active">
+    <div class="year-layout" id="yearLayout"></div>
+    <footer>Selecione uma meta na legenda (topo) e clique nos dias para pintar. Clique novamente para remover essa meta do dia.</footer>
+  </div>
+
+  <!-- Analytics View -->
+  <div id="analytics" class="view">
+    <div class="chart-wrap">
+      <canvas id="barChart" width="800" height="300"></canvas>
+    </div>
+    <div style="height:12px"></div>
+    <div class="chart-wrap">
+      <canvas id="pieChart" width="400" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- Goals View -->
+  <div id="goals" class="view">
+    <div class="goals-panel">
+      <form id="goalForm">
+        <label>Goal name:<br><input id="goalName" required></label>
+        <label>Deadline (optional):<br><input id="goalDate" type="date"></label>
+        <label>Color:<br><input id="goalColor" type="color" value="#00ff66"></label>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button type="submit">Add / Update</button>
+          <button type="button" id="resetForm">Reset</button>
+        </div>
+      </form>
+      <div style="flex:1">
+        <h4 style="margin-top:0">Goals</h4>
+        <div id="goalList" class="goal-list"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// --- state and persistence ---
+const state = {
+  year: new Date().getFullYear(),
+  goals: JSON.parse(localStorage.getItem('goals')||'[]'),
+  data: JSON.parse(localStorage.getItem('calendarData')||'{}'),
+  selectedGoalId: null
+}
+
+// helpers
+function saveGoals(){ localStorage.setItem('goals', JSON.stringify(state.goals)); }
+function saveData(){ localStorage.setItem('calendarData', JSON.stringify(state.data)); }
+function iso(y,m,d){ return [String(y).padStart(4,'0'),String(m).padStart(2,'0'),String(d).padStart(2,'0')].join('-'); }
+
+document.getElementById('yearLabel').textContent = state.year;
+
+// --- navigation ---
+const tabs = document.querySelectorAll('.tab'); tabs.forEach(t=>t.addEventListener('click', ()=>{ tabs.forEach(x=>x.classList.remove('active')); t.classList.add('active'); showView(t.dataset.view); }));
+function showView(name){ document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); document.getElementById(name).classList.add('active'); if(name==='analytics') renderAnalytics(); }
+
+// --- legend and goal selection ---
+const legendEl = document.getElementById('legend');
+function renderLegend(){ legendEl.innerHTML=''; state.goals.forEach(g=>{
+  const item = document.createElement('div'); item.className='legend-item'; item.dataset.id=g.id;
+  if(state.selectedGoalId===g.id) item.classList.add('selected');
+  const col = document.createElement('div'); col.className='legend-color'; col.style.background=g.color; item.appendChild(col);
+  const label = document.createElement('div'); label.textContent = g.name; item.appendChild(label);
+  item.addEventListener('click', ()=>{ state.selectedGoalId = (state.selectedGoalId===g.id)? null : g.id; renderLegend(); });
+  legendEl.appendChild(item);
+});
+}
+
+// --- calendar rendering ---
+const yearLayout = document.getElementById('yearLayout');
+function renderCalendar(){ yearLayout.innerHTML='';
+  for(let m=0;m<12;m++){
+    const month = document.createElement('div'); month.className='month';
+    const h = document.createElement('h3'); h.textContent = new Date(state.year,m,1).toLocaleString('pt-BR',{month:'long',year:'numeric'}); month.appendChild(h);
+
+    const wd = document.createElement('div'); wd.className='weekdays'; ['D','S','T','Q','Q','S','S'].forEach(x=>{ const w=document.createElement('div'); w.className='weekday'; w.textContent=x; wd.appendChild(w); }); month.appendChild(wd);
+
+    const grid = document.createElement('div'); grid.className='grid';
+    const first = new Date(state.year,m,1); const start = first.getDay(); const days = new Date(state.year,m+1,0).getDate();
+    for(let i=0;i<start;i++){ const spacer=document.createElement('div'); spacer.className='cell'; spacer.style.background='transparent'; grid.appendChild(spacer); }
+
+    for(let d=1; d<=days; d++){
+      const ds = iso(state.year,m+1,d);
+      const cell = document.createElement('div'); cell.className='cell'; cell.dataset.date = ds;
+      const dateEl = document.createElement('div'); dateEl.className='date'; dateEl.textContent = d; cell.appendChild(dateEl);
+
+      // fill background fully by goal colors
+      const tags = (state.data[ds] && state.data[ds].tags) ? state.data[ds].tags : [];
+      if(tags.length===0){ cell.style.background = '#041204'; }
+      else if(tags.length===1){ const g = state.goals.find(x=>x.id===tags[0]); cell.style.background = g? g.color : '#666'; }
+      else {
+        // build stacked stripes gradient
+        const colors = tags.map(tid=>{ const g = state.goals.find(x=>x.id===tid); return g? g.color : '#000'; });
+        // create a repeating linear gradient with equal stripe widths
+        const stops = colors.map((c,i)=>`${c} ${(i*100/colors.length)}% ${( (i+1)*100/colors.length)}%`).join(',');
+        cell.style.background = `linear-gradient(90deg, ${stops})`;
+      }
+
+      cell.addEventListener('click', ()=>{
+        if(!state.selectedGoalId) return; // user must select a goal first
+        state.data[ds] = state.data[ds] || {tags:[]};
+        const idx = state.data[ds].tags.indexOf(state.selectedGoalId);
+        if(idx===-1) state.data[ds].tags.push(state.selectedGoalId);
+        else state.data[ds].tags.splice(idx,1);
+        if(state.data[ds].tags.length===0) delete state.data[ds];
+        saveData(); renderCalendar();
+      });
+
+      grid.appendChild(cell);
+    }
+
+    month.appendChild(grid);
+    yearLayout.appendChild(month);
+  }
+}
+
+// --- goals management ---
+const goalForm = document.getElementById('goalForm');
+const goalList = document.getElementById('goalList');
+let editingGoalId = null;
+
+function renderGoals(){ goalList.innerHTML='';
+  state.goals.forEach(g=>{
+    const el = document.createElement('div'); el.className='goal-item';
+    const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+    const col = document.createElement('div'); col.style.width='18px'; col.style.height='18px'; col.style.background=g.color; col.style.borderRadius='4px'; left.appendChild(col);
+    const txt = document.createElement('div'); txt.innerHTML = `<b>${g.name}</b><br><small style=\"color:var(--muted)\">${g.date||'no deadline'}</small>`; left.appendChild(txt);
+    el.appendChild(left);
+    const actions = document.createElement('div'); actions.style.display='flex'; actions.style.gap='8px';
+    const editBtn = document.createElement('button'); editBtn.textContent='Edit'; editBtn.addEventListener('click', ()=>{ loadGoalToForm(g.id); }); actions.appendChild(editBtn);
+    const delBtn = document.createElement('button'); delBtn.textContent='Delete'; delBtn.addEventListener('click', ()=>{ if(confirm('Delete goal?')){ deleteGoal(g.id); } }); actions.appendChild(delBtn);
+    el.appendChild(actions);
+    goalList.appendChild(el);
+  });
+}
+
+function loadGoalToForm(id){ const g = state.goals.find(x=>x.id===id); if(!g) return; editingGoalId = id; document.getElementById('goalName').value = g.name; document.getElementById('goalDate').value = g.date || ''; document.getElementById('goalColor').value = g.color; }
+
+function deleteGoal(id){ // remove goal reference from all days
+  state.goals = state.goals.filter(x=>x.id!==id);
+  for(const d in state.data){ state.data[d].tags = state.data[d].tags.filter(t=>t!==id); if(state.data[d].tags.length===0) delete state.data[d]; }
+  if(state.selectedGoalId===id) state.selectedGoalId = null;
+  saveGoals(); saveData(); renderAll(); }
+
+goalForm.addEventListener('submit', (e)=>{ e.preventDefault(); const name = document.getElementById('goalName').value.trim(); if(!name) return; const date = document.getElementById('goalDate').value || null; const color = document.getElementById('goalColor').value; if(editingGoalId){ // update
+  const g = state.goals.find(x=>x.id===editingGoalId); if(g){ g.name = name; g.date = date; g.color = color; }
+} else { const id = name.toLowerCase().replace(/\s+/g,'_') + '_' + Date.now(); state.goals.push({id,name,date,color}); }
+editingGoalId = null; goalForm.reset(); saveGoals(); renderAll(); });
+
+document.getElementById('resetForm').addEventListener('click', ()=>{ editingGoalId=null; goalForm.reset(); });
+
+// --- analytics ---
+let barChart=null; let pieChart=null;
+function renderAnalytics(){ const goals = state.goals; const data = state.data;
+  const counts = goals.map(g=>0);
+  const countsMap = {};
+  for(const d in data){ data[d].tags.forEach(tid=> countsMap[tid] = (countsMap[tid]||0)+1); }
+  const labels = goals.map(g=>g.name);
+  const values = goals.map(g=> countsMap[g.id]||0);
+  const colors = goals.map(g=>g.color);
+  // bar
+  const barCtx = document.getElementById('barChart').getContext('2d'); if(barChart) barChart.destroy();
+  barChart = new Chart(barCtx, { type:'bar', data:{labels, datasets:[{label:'Dias marcados', data:values, backgroundColor:colors}]}, options:{scales:{y:{beginAtZero:true}}} });
+  // pie
+  const pieCtx = document.getElementById('pieChart').getContext('2d'); if(pieChart) pieChart.destroy();
+  pieChart = new Chart(pieCtx, { type:'pie', data:{labels, datasets:[{data:values, backgroundColor:colors}]}, options:{} });
+}
+
+// --- interactions & utilities ---
+function renderAll(){ renderLegend(); renderCalendar(); renderGoals(); }
+
+// export PNG (screenshot of calendar area)
+document.getElementById('exportPNG').addEventListener('click', ()=>{
+  // use html2canvas if available; fallback to alert
+  if(typeof html2canvas !== 'undefined'){
+    html2canvas(document.querySelector('.app')).then(canvas=>{
+      const a = document.createElement('a'); a.download = `calendar_${state.year}.png`; a.href = canvas.toDataURL('image/png'); a.click();
+    });
+  } else alert('html2canvas not loaded — load library or use screenshot.');
+});
+
+// clear all
+document.getElementById('clearAll').addEventListener('click', ()=>{ if(confirm('Clear all painted days?')){ state.data={}; saveData(); renderCalendar(); } });
+
+// initialize first-run defaults (none prefilled)
+if(!state.goals.length){ /* intentionally empty - user must create goals */ }
+renderAll();
+
+</script>
+</body>
+</html>
